@@ -60,7 +60,12 @@ class JWTSessionService {
       };
 
       // Calculate TTL based on JWT expiration
-      const decoded = jwt.decode(token);
+      // Even though we just generated this token, verify it for consistency
+      const decoded = jwt.verify(token, this.jwtConfig.secret, {
+        algorithms: [this.jwtConfig.algorithm],
+        issuer: this.jwtConfig.issuer,
+        audience: this.jwtConfig.audience
+      });
       const ttl = decoded.exp - Math.floor(Date.now() / 1000);
 
       // Store session data
@@ -180,8 +185,12 @@ class JWTSessionService {
         refreshedAt: new Date().toISOString()
       };
 
-      // Calculate new TTL
-      const decoded = jwt.decode(newToken);
+      // Calculate new TTL - verify token first for security
+      const decoded = jwt.verify(newToken, this.jwtConfig.secret, {
+        algorithms: [this.jwtConfig.algorithm],
+        issuer: this.jwtConfig.issuer,
+        audience: this.jwtConfig.audience
+      });
       const ttl = decoded.exp - Math.floor(Date.now() / 1000);
 
       // Update session in Redis
@@ -210,7 +219,12 @@ class JWTSessionService {
    */
   async revokeToken(token) {
     try {
-      const decoded = jwt.decode(token);
+      // Verify token signature before processing revocation
+      const decoded = jwt.verify(token, this.jwtConfig.secret, {
+        algorithms: [this.jwtConfig.algorithm],
+        issuer: this.jwtConfig.issuer,
+        audience: this.jwtConfig.audience
+      });
       if (!decoded || !decoded.sessionId) {
         throw new Error('Invalid token');
       }
@@ -399,7 +413,13 @@ class JWTSessionService {
 
   decodeToken(token) {
     try {
-      return jwt.decode(token, { complete: true });
+      // Verify token signature for security
+      return jwt.verify(token, this.jwtConfig.secret, {
+        algorithms: [this.jwtConfig.algorithm],
+        issuer: this.jwtConfig.issuer,
+        audience: this.jwtConfig.audience,
+        complete: true
+      });
     } catch (error) {
       return null;
     }
@@ -407,7 +427,12 @@ class JWTSessionService {
 
   isTokenExpired(token) {
     try {
-      const decoded = jwt.decode(token);
+      // Verify token signature before checking expiration
+      const decoded = jwt.verify(token, this.jwtConfig.secret, {
+        algorithms: [this.jwtConfig.algorithm],
+        issuer: this.jwtConfig.issuer,
+        audience: this.jwtConfig.audience
+      });
       if (!decoded || !decoded.exp) return true;
       
       return decoded.exp < Math.floor(Date.now() / 1000);
@@ -418,7 +443,12 @@ class JWTSessionService {
 
   getTokenRemainingTime(token) {
     try {
-      const decoded = jwt.decode(token);
+      // Verify token signature before calculating remaining time
+      const decoded = jwt.verify(token, this.jwtConfig.secret, {
+        algorithms: [this.jwtConfig.algorithm],
+        issuer: this.jwtConfig.issuer,
+        audience: this.jwtConfig.audience
+      });
       if (!decoded || !decoded.exp) return 0;
       
       const remaining = decoded.exp - Math.floor(Date.now() / 1000);

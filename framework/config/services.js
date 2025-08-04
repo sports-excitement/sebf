@@ -24,13 +24,55 @@ function isServiceEnabled(serviceName, autoDetectCondition) {
 }
 
 const config = {
-  // Database Configuration (Prisma/PostgreSQL)
+  // Database Configuration (Prisma/PostgreSQL) - Now Optional
   database: {
     url: process.env.DATABASE_URL,
     enabled: isServiceEnabled('database', !!process.env.DATABASE_URL),
     maxConnections: parseInt(process.env.DB_MAX_CONNECTIONS || '10', 10),
     connectionTimeout: parseInt(process.env.DB_CONNECTION_TIMEOUT || '5000', 10),
-    required: true, // Database is always required
+    required: false, // Database is now optional - users can choose between Prisma and MongoDB
+  },
+
+  // MongoDB Configuration (Mongoose ODM)
+  mongodb: {
+    enabled: isServiceEnabled('mongodb', !!(process.env.MONGODB_PRIMARY_HOST && process.env.MONGODB_PRIMARY_DATABASE)),
+    required: false, // Optional database choice
+    primary: {
+      host: process.env.MONGODB_PRIMARY_HOST || 'localhost',
+      port: parseInt(process.env.MONGODB_PRIMARY_PORT || '27017', 10),
+      database: process.env.MONGODB_PRIMARY_DATABASE,
+      username: process.env.MONGODB_PRIMARY_USERNAME,
+      password: process.env.MONGODB_PRIMARY_PASSWORD,
+      options: {
+        authSource: process.env.MONGODB_PRIMARY_AUTH_SOURCE || 'admin',
+        ssl: process.env.MONGODB_PRIMARY_SSL === 'true',
+        replicaSet: process.env.MONGODB_PRIMARY_REPLICA_SET,
+        readPreference: process.env.MONGODB_PRIMARY_READ_PREFERENCE || 'primary'
+      }
+    },
+    secondary: {
+      enabled: isServiceEnabled('mongodb_secondary', !!(process.env.MONGODB_SECONDARY_HOST && process.env.MONGODB_SECONDARY_DATABASE)),
+      host: process.env.MONGODB_SECONDARY_HOST || 'localhost',
+      port: parseInt(process.env.MONGODB_SECONDARY_PORT || '27017', 10),
+      database: process.env.MONGODB_SECONDARY_DATABASE,
+      username: process.env.MONGODB_SECONDARY_USERNAME,
+      password: process.env.MONGODB_SECONDARY_PASSWORD,
+      options: {
+        authSource: process.env.MONGODB_SECONDARY_AUTH_SOURCE || 'admin',
+        ssl: process.env.MONGODB_SECONDARY_SSL === 'true',
+        replicaSet: process.env.MONGODB_SECONDARY_REPLICA_SET,
+        readPreference: process.env.MONGODB_SECONDARY_READ_PREFERENCE || 'secondary'
+      }
+    },
+    options: {
+      maxPoolSize: parseInt(process.env.MONGODB_MAX_POOL_SIZE || '10', 10),
+      serverSelectionTimeoutMS: parseInt(process.env.MONGODB_SERVER_SELECTION_TIMEOUT || '5000', 10),
+      socketTimeoutMS: parseInt(process.env.MONGODB_SOCKET_TIMEOUT || '45000', 10),
+      connectTimeoutMS: parseInt(process.env.MONGODB_CONNECT_TIMEOUT || '10000', 10),
+      heartbeatFrequencyMS: parseInt(process.env.MONGODB_HEARTBEAT_FREQUENCY || '10000', 10),
+      retryWrites: process.env.MONGODB_RETRY_WRITES !== 'false',
+      w: process.env.MONGODB_WRITE_CONCERN || 'majority'
+    }
   },
 
   // Supabase Configuration
@@ -289,6 +331,7 @@ function validateConfig() {
 function getEnabledServices() {
   return {
     database: config.database.enabled,
+    mongodb: config.mongodb.enabled,
     supabase: config.supabase.enabled,
     minio: config.minio.enabled,
     redis: config.redis.enabled,
@@ -330,6 +373,8 @@ function isServiceConfigured(serviceName, serviceConfig) {
   switch (serviceName) {
     case 'database':
       return !!serviceConfig.url;
+    case 'mongodb':
+      return !!(serviceConfig.primary.host && serviceConfig.primary.database);
     case 'supabase':
       return !!(serviceConfig.url && serviceConfig.key);
     case 'minio':
@@ -399,7 +444,8 @@ function canDisableService(serviceName) {
 function getServiceDependencies() {
   return {
     redis: ['sse'], // SSE can use Redis for scaling
-    database: ['all'], // Most services depend on database
+    database: [], // Prisma database is now optional
+    mongodb: [], // MongoDB is optional and alternative to Prisma
     firebase: [], // Firebase is independent
     typesense: [], // Typesense is independent
     minio: [], // MinIO is independent
