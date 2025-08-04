@@ -33,6 +33,9 @@ const serviceLoader = {
       switch (serviceName) {
         case 'redis':
           return require('../framework/services/RedisService');
+        case 'mongodb':
+        case 'mongoose':
+          return require('../framework/services/MongooseService');
         case 'typesense':
           return require('../framework/services/TypesenseService');
         case 'minio':
