@@ -188,8 +188,17 @@ class SecurityService {
         // Expression and eval patterns
         /expression\s*\(/gi,
         /eval\s*\(/gi,
-        // HTML entities that could be XSS
-        /&#x?[0-9a-f]+;?/gi,
+        // HTML entities that could be XSS (only dangerous ones)
+        /&#0*60;?/gi,   // <
+        /&#0*62;?/gi,   // >
+        /&#0*34;?/gi,   // "
+        /&#0*39;?/gi,   // '
+        /&#0*47;?/gi,   // /
+        /&#x0*3c;?/gi,  // < (hex)
+        /&#x0*3e;?/gi,  // > (hex)
+        /&#x0*22;?/gi,  // " (hex)
+        /&#x0*27;?/gi,  // ' (hex)
+        /&#x0*2f;?/gi,  // / (hex)
         // Style injection
         /<style[^>]*>.*?<\/style\s*>/gis,
         // Import statements
