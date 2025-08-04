@@ -210,7 +210,7 @@ class CORSService {
       /\(\?\=/,           // Positive lookahead
       /\(\?\!/,           // Negative lookahead
       /\(\?\<=/,          // Positive lookbehind
-      /\(\?\<!/,          // negative lookbehind
+      /\(\?\<!/,          // Negative lookbehind
       /\\[nrtfvbas0]/,    // Specific escape sequences like \n, \t, \f, \v, \b, \a, \s, \0
       /\[\^[^\]]*\]/,     // Negated character classes (unless simple)
       /\{.*,.*\}/,        // Quantifiers with complex ranges
