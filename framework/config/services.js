@@ -144,6 +144,7 @@ const config = {
   email: {
     enabled: isServiceEnabled('email', !!process.env.EMAIL_HOST),
     required: false,
+    provider: process.env.EMAIL_PROVIDER || 'smtp',
     host: process.env.EMAIL_HOST,
     port: parseInt(process.env.EMAIL_PORT || '587', 10),
     secure: process.env.EMAIL_SECURE === 'true',
@@ -152,6 +153,24 @@ const config = {
       pass: process.env.EMAIL_PASS,
     },
     from: process.env.EMAIL_FROM || 'noreply@sports-excitement.com',
+    
+    // Advanced settings
+    maxConnections: parseInt(process.env.EMAIL_MAX_CONNECTIONS || '5', 10),
+    maxMessages: parseInt(process.env.EMAIL_MAX_MESSAGES || '100', 10),
+    rateLimit: parseInt(process.env.EMAIL_RATE_LIMIT || '10', 10),
+    maxEmailsPerMinute: parseInt(process.env.EMAIL_MAX_PER_MINUTE || '10', 10),
+    rejectUnauthorized: process.env.EMAIL_REJECT_UNAUTHORIZED !== 'false',
+    pool: process.env.EMAIL_POOL !== 'false',
+    
+    // Alternative providers
+    apiKey: process.env.EMAIL_API_KEY, // For SendGrid, etc.
+    accessKeyId: process.env.EMAIL_ACCESS_KEY_ID, // For AWS SES
+    secretAccessKey: process.env.EMAIL_SECRET_ACCESS_KEY, // For AWS SES
+    region: process.env.EMAIL_REGION || 'us-east-1', // For AWS SES
+    
+    // Bulk email settings
+    bulkBatchSize: parseInt(process.env.EMAIL_BULK_BATCH_SIZE || '50', 10),
+    testRecipient: process.env.EMAIL_TEST_RECIPIENT,
   },
 
   // Rate Limiting Configuration
@@ -175,7 +194,9 @@ const config = {
     required: false,
     heartbeatInterval: parseInt(process.env.SSE_HEARTBEAT_INTERVAL || '30000', 10), // 30 seconds
     maxConnections: parseInt(process.env.SSE_MAX_CONNECTIONS || '1000', 10),
+    maxConnectionsPerUser: parseInt(process.env.SSE_MAX_CONNECTIONS_PER_USER || '5', 10),
     connectionTimeout: parseInt(process.env.SSE_CONNECTION_TIMEOUT || '300000', 10), // 5 minutes
+    retryInterval: parseInt(process.env.SSE_RETRY_INTERVAL || '5000', 10),
   },
 
   // Memory Monitoring Configuration
@@ -184,6 +205,53 @@ const config = {
     required: false,
     interval: parseInt(process.env.MEMORY_MONITOR_INTERVAL || '60000', 10), // 1 minute
     threshold: parseInt(process.env.MEMORY_THRESHOLD || '80', 10), // 80% usage warning
+  },
+
+  // Error Handling Service Configuration
+  error_handling: {
+    enabled: isServiceEnabled('error_handling', process.env.ERROR_HANDLING_ENABLED !== 'false'),
+    required: false, // Optional but recommended
+    alertThresholds: {
+      ratePerMinute: parseInt(process.env.ERROR_ALERT_RATE_PER_MINUTE || '10', 10),
+      criticalErrors: parseInt(process.env.ERROR_ALERT_CRITICAL || '1', 10),
+      consecutiveErrors: parseInt(process.env.ERROR_ALERT_CONSECUTIVE || '5', 10)
+    },
+    retentionPeriod: parseInt(process.env.ERROR_RETENTION_PERIOD || '86400000', 10), // 24 hours
+    logLevel: process.env.ERROR_LOG_LEVEL || 'error'
+  },
+
+  // Authentication Service Configuration
+  auth: {
+    enabled: isServiceEnabled('auth', process.env.AUTH_SERVICE_ENABLED !== 'false'),
+    required: false, // Handled by middleware primarily
+    enforceIPValidation: process.env.AUTH_ENFORCE_IP_VALIDATION === 'true',
+    enforceUserAgentValidation: process.env.AUTH_ENFORCE_UA_VALIDATION === 'true',
+    maxTokenBlacklistSize: parseInt(process.env.AUTH_MAX_BLACKLIST_SIZE || '10000', 10),
+    sessionCleanupInterval: parseInt(process.env.AUTH_SESSION_CLEANUP_INTERVAL || '3600000', 10) // 1 hour
+  },
+
+  // Security Service Configuration
+  security: {
+    enabled: isServiceEnabled('security', process.env.SECURITY_SERVICE_ENABLED !== 'false'),
+    required: false, // Optional but recommended
+    whitelistIPs: process.env.SECURITY_WHITELIST_IPS,
+    blacklistIPs: process.env.SECURITY_BLACKLIST_IPS,
+    rateLimitWindow: parseInt(process.env.SECURITY_RATE_LIMIT_WINDOW || '900000', 10), // 15 minutes
+    rateLimitMax: parseInt(process.env.SECURITY_RATE_LIMIT_MAX || '1000', 10),
+    enableThreatDetection: process.env.SECURITY_THREAT_DETECTION !== 'false',
+    enableIPTracking: process.env.SECURITY_IP_TRACKING !== 'false'
+  },
+
+  // CORS Service Configuration
+  cors: {
+    enabled: isServiceEnabled('cors', process.env.CORS_SERVICE_ENABLED !== 'false'),
+    required: false, // Optional service
+    origins: process.env.CORS_ORIGINS || process.env.ALLOWED_ORIGINS,
+    credentials: process.env.CORS_CREDENTIALS !== 'false',
+    methods: (process.env.CORS_METHODS || 'GET,POST,PUT,DELETE,PATCH,OPTIONS').split(','),
+    allowedHeaders: (process.env.CORS_HEADERS || 'Content-Type,Authorization,X-Requested-With,Accept,Origin').split(','),
+    maxAge: parseInt(process.env.CORS_MAX_AGE || '3600', 10),
+    defaultPolicy: process.env.CORS_DEFAULT_POLICY || 'restrictive'
   }
 };
 
@@ -229,6 +297,10 @@ function getEnabledServices() {
     email: config.email.enabled,
     sse: config.sse.enabled,
     memory: config.memory.enabled,
+    error_handling: config.error_handling.enabled,
+    auth: config.auth.enabled,
+    security: config.security.enabled,
+    cors: config.cors.enabled,
   };
 }
 
@@ -269,11 +341,29 @@ function isServiceConfigured(serviceName, serviceConfig) {
     case 'firebase':
       return !!serviceConfig.serviceAccountKey;
     case 'email':
-      return !!serviceConfig.host;
+      const provider = serviceConfig.provider || 'smtp';
+      switch (provider) {
+        case 'smtp':
+          return !!serviceConfig.host;
+        case 'sendgrid':
+          return !!serviceConfig.apiKey;
+        case 'ses':
+          return !!(serviceConfig.accessKeyId && serviceConfig.secretAccessKey);
+        default:
+          return !!serviceConfig.host;
+      }
     case 'sse':
       return true; // SSE doesn't require special config
     case 'memory':
       return true; // Memory monitoring doesn't require special config
+    case 'error_handling':
+      return true; // Error handling doesn't require special config
+    case 'auth':
+      return true; // Auth service doesn't require special config
+    case 'security':
+      return true; // Security service doesn't require special config
+    case 'cors':
+      return true; // CORS service doesn't require special config
     default:
       return true;
   }

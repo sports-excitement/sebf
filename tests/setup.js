@@ -108,6 +108,52 @@ global.testUtils = {
       ...originalService,
       ...methods
     };
+  },
+
+  // Logger helpers for testing
+  enableTestLogging: () => {
+    process.env.ENABLE_TEST_LOGGING = 'true';
+    const Logger = require('../framework/helpers/Logger');
+    Logger.clearTestLogs();
+    return Logger;
+  },
+
+  disableTestLogging: () => {
+    process.env.ENABLE_TEST_LOGGING = 'false';
+  },
+
+  getTestLogs: () => {
+    const Logger = require('../framework/helpers/Logger');
+    return Logger.getTestLogs();
+  },
+
+  clearTestLogs: () => {
+    const Logger = require('../framework/helpers/Logger');
+    Logger.clearTestLogs();
+  },
+
+  // Response helpers for testing
+  getTestResponses: () => {
+    const Response = require('../framework/helpers/Response');
+    return Response.getTestResponses();
+  },
+
+  clearTestResponses: () => {
+    const Response = require('../framework/helpers/Response');
+    Response.clearTestResponses();
+  },
+
+  // Debug helpers
+  debugTest: (message, data) => {
+    if (process.env.ENABLE_TEST_LOGGING === 'true') {
+      console.log(`[DEBUG TEST] ${message}`, data);
+    }
+  },
+
+  // Assert with logging
+  expectWithLog: (condition, message) => {
+    global.testUtils.debugTest(`Assertion: ${message}`, { condition });
+    return expect(condition);
   }
 };
 
@@ -151,6 +197,10 @@ beforeEach(async () => {
   try {
     await global.testUtils.cleanupDatabase();
     await global.testUtils.cleanupRedis();
+    
+    // Clear test logs and responses for clean slate
+    global.testUtils.clearTestLogs();
+    global.testUtils.clearTestResponses();
     
     // Force garbage collection if available
     if (global.gc) {

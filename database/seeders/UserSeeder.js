@@ -3,7 +3,7 @@ const { faker } = require('@faker-js/faker');
 const bcrypt = require('bcryptjs');
 
 // Import our enhanced Prisma service for better error handling
-const { prismaService } = require('../../config/prisma');
+const { prismaService } = require('../../framework/config/prisma');
 
 /**
  * User Seeder

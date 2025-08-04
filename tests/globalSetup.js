@@ -11,6 +11,6 @@ module.exports = async () => {
   
   console.log('🧪 Test environment initialized');
   console.log(`   Database: ${process.env.DATABASE_URL}`);
-  console.log(`   Redis DB: ${process.env.REDIS_DB}`);
+  console.log(`   Redis DB: ${process.env.REDIS_DATABASE}`);
   console.log(`   Log Level: ${process.env.LOG_LEVEL}`);
 }; 
