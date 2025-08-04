@@ -169,8 +169,8 @@ class SecurityService {
     this.registerThreatRule('xss', {
       enabled: true,
       patterns: [
-        // Improved script tag detection - handles spaces and attributes in closing tag
-        /<script[^>]*>.*?<\/script\s*>/gis,
+        // Comprehensive script tag detection - handles all possible closing tag variations
+        /<script[^>]*>.*?<\/script[^>]*>/gis,
         // Alternative script patterns
         /<script[^>]*\/>/gi,
         // Javascript protocols
@@ -199,8 +199,8 @@ class SecurityService {
         /&#x0*22;?/gi,  // " (hex)
         /&#x0*27;?/gi,  // ' (hex)
         /&#x0*2f;?/gi,  // / (hex)
-        // Style injection
-        /<style[^>]*>.*?<\/style\s*>/gis,
+        // Style injection - comprehensive closing tag detection
+        /<style[^>]*>.*?<\/style[^>]*>/gis,
         // Import statements
         /@import/gi
       ],
