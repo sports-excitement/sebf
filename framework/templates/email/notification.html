@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{notification_title}} - {{app_name}}</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+        .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+        .button { display: inline-block; background: #4facfe; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
+        .notification-box { background: white; border-left: 4px solid #4facfe; padding: 20px; margin: 20px 0; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>{{notification_title}}</h1>
+    </div>
+    <div class="content">
+        <h2>Hello {{user_name}},</h2>
+        
+        <div class="notification-box">
+            <h3>{{notification_subject}}</h3>
+            <p>{{notification_message}}</p>
+        </div>
+        
+        {{#action_required}}
+        <p>Action Required:</p>
+        <a href="{{action_url}}" class="button">{{action_text}}</a>
+        {{/action_required}}
+        
+        <p>This notification was sent at {{timestamp}}.</p>
+        
+        <p>Best regards,<br>The {{app_name}} Team</p>
+    </div>
+    <div class="footer">
+        <p>&copy; {{current_year}} {{app_name}}. All rights reserved.</p>
+        <p>This email was sent to {{user_email}}</p>
+        <p><a href="{{unsubscribe_url}}">Unsubscribe from notifications</a></p>
+    </div>
+</body>
+</html>

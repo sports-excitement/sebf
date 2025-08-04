@@ -1,5 +1,6 @@
 const Response = require('../../../framework/helpers/Response');
 const FrameworkAuth = require('../../../framework/middleware/Auth');
+const AuthService = require('../../../framework/services/AuthService');
 
 /**
  * Application Authentication Middleware
@@ -8,11 +9,111 @@ const FrameworkAuth = require('../../../framework/middleware/Auth');
  * - Role-based access control
  * - Permission-based authentication
  * - Application-specific auth flows
+ * - Custom user validation
  */
 class ApplicationAuthMiddleware {
   constructor() {
-    // Inherit framework auth functionality
+    // Get framework auth service instance
     this.frameworkAuth = FrameworkAuth.frameworkAuthService;
+    this.authService = this.frameworkAuth.getAuthService();
+    
+    // Setup application-specific authentication
+    this.setupApplicationAuth();
+  }
+
+  /**
+   * Setup application-specific authentication providers and validators
+   */
+  setupApplicationAuth() {
+    // Override user status checking to implement business logic
+    this.authService.checkUserStatus = this.checkUserStatus.bind(this);
+    
+    // Register application-specific auth providers
+    this.authService.registerAuthProvider('database_user', this.validateDatabaseUser.bind(this));
+    
+    // Register custom validators for business logic
+    this.authService.registerCustomValidator('role_check', this.validateUserRole.bind(this));
+    this.authService.registerCustomValidator('permission_check', this.validateUserPermissions.bind(this));
+  }
+
+  /**
+   * Check user status in database (implements framework interface)
+   */
+  async checkUserStatus(userId) {
+    try {
+      // Implement database check for user status
+      // This is where you'd check if the user is active, suspended, etc.
+      
+      // For now, return active - replace with actual database check
+      return { active: true };
+    } catch (error) {
+      return { active: false, error: error.message };
+    }
+  }
+
+  /**
+   * Validate database user (custom auth provider)
+   */
+  async validateDatabaseUser(token, context = {}) {
+    try {
+      // Custom logic for database-based user validation
+      // This could check user status, roles, etc. from database
+      
+      // For now, delegate to JWT validation
+      return await this.authService.validateJWTToken(token, context);
+    } catch (error) {
+      return {
+        valid: false,
+        error: error.message,
+        code: 'DATABASE_USER_VALIDATION_FAILED'
+      };
+    }
+  }
+
+  /**
+   * Validate user role (custom validator)
+   */
+  async validateUserRole(payload, req, options = {}) {
+    const { requiredRoles = [] } = options;
+    
+    if (requiredRoles.length === 0) {
+      return { valid: true };
+    }
+
+    const userRole = payload.role;
+    if (!userRole || !requiredRoles.includes(userRole)) {
+      return {
+        valid: false,
+        error: 'Insufficient role permissions'
+      };
+    }
+
+    return { valid: true };
+  }
+
+  /**
+   * Validate user permissions (custom validator)
+   */
+  async validateUserPermissions(payload, req, options = {}) {
+    const { requiredPermissions = [] } = options;
+    
+    if (requiredPermissions.length === 0) {
+      return { valid: true };
+    }
+
+    const userPermissions = payload.permissions || [];
+    const hasPermission = requiredPermissions.some(permission => 
+      userPermissions.includes(permission)
+    );
+
+    if (!hasPermission) {
+      return {
+        valid: false,
+        error: 'Insufficient permissions'
+      };
+    }
+
+    return { valid: true };
   }
 
   /**
@@ -23,85 +124,54 @@ class ApplicationAuthMiddleware {
       roles = [roles];
     }
 
-    return (req, res, next) => {
-      // First ensure user is authenticated
-      if (!req.user || !req.authenticated) {
-        return res.status(401).json(
-          Response.error('Authentication required', 401)
-        );
+    return this.authService.createAuthMiddleware({
+      required: true,
+      providers: ['database_user', 'session', 'jwt'],
+      customCheck: async (payload, req) => {
+        return await this.validateUserRole(payload, req, { requiredRoles: roles });
       }
-
-      // Check if user has required role
-      if (!roles.includes(req.user.role)) {
-        return res.status(403).json(
-          Response.error('Insufficient permissions', 403)
-        );
-      }
-
-      next();
-    };
+    });
   }
 
   /**
    * Permission-based authentication middleware
    */
   requirePermission(permission) {
-    return (req, res, next) => {
-      // First ensure user is authenticated
-      if (!req.user || !req.authenticated) {
-        return res.status(401).json(
-          Response.error('Authentication required', 401)
-        );
-      }
+    const permissions = typeof permission === 'string' ? [permission] : permission;
 
-      // Check if user has required permission
-      // Note: This assumes permissions are stored in user.permissions array
-      if (!req.user.permissions || !req.user.permissions.includes(permission)) {
-        return res.status(403).json(
-          Response.error('Insufficient permissions', 403)
-        );
+    return this.authService.createAuthMiddleware({
+      required: true,
+      providers: ['database_user', 'session', 'jwt'],
+      customCheck: async (payload, req) => {
+        return await this.validateUserPermissions(payload, req, { requiredPermissions: permissions });
       }
-
-      next();
-    };
+    });
   }
 
   /**
    * Admin-only access middleware
    */
-  adminOnly(req, res, next) {
-    if (!req.user || !req.authenticated) {
-      return res.status(401).json(
-        Response.error('Authentication required', 401)
-      );
-    }
-
-    if (req.user.role !== 'ADMIN' && req.user.role !== 'SUPERADMIN') {
-      return res.status(403).json(
-        Response.error('Admin access required', 403)
-      );
-    }
-
-    next();
+  adminOnly() {
+    return this.requireRole(['ADMIN', 'SUPERADMIN']);
   }
 
   /**
    * Verified users only middleware
    */
-  verifiedOnly(req, res, next) {
-    if (!req.user || !req.authenticated) {
-      return res.status(401).json(
-        Response.error('Authentication required', 401)
-      );
-    }
-
-    if (!req.user.isActive || req.user.status !== 'ACTIVE') {
-      return res.status(403).json(
-        Response.error('Account verification required', 403)
-      );
-    }
-
-    next();
+  verifiedOnly() {
+    return this.authService.createAuthMiddleware({
+      required: true,
+      providers: ['database_user', 'session', 'jwt'],
+      customCheck: async (payload, req) => {
+        if (!payload.isActive || payload.status !== 'ACTIVE') {
+          return {
+            valid: false,
+            error: 'Account verification required'
+          };
+        }
+        return { valid: true };
+      }
+    });
   }
 
   /**

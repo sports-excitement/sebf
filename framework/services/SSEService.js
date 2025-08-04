@@ -55,7 +55,14 @@ class SSEService {
       return SSEHelpers.sendError(res, 'SSE service is disabled');
     }
 
-    // Check connection limits
+    // Check per-user connection limits (prevent abuse)
+    const userConnections = Array.from(this.connections.values()).filter(conn => conn.userId === userId);
+    const maxPerUser = this.config.maxConnectionsPerUser || 5;
+    if (userId && userConnections.length >= maxPerUser) {
+      return SSEHelpers.sendError(res, `Maximum connections per user reached (${maxPerUser})`);
+    }
+
+    // Check global connection limits
     if (this.connections.size >= this.config.maxConnections) {
       return SSEHelpers.sendError(res, 'Maximum connections reached');
     }
@@ -68,50 +75,104 @@ class SSEService {
 
     const connectionId = SSEHelpers.generateConnectionId();
 
-    // Initialize SSE connection with headers
-    SSEHelpers.initializeSSE(res, {
-      connectionId: connectionId,
-      cors: {
-        origin: this.getAllowedOrigin(req),
-        credentials: true
-      }
-    });
+    try {
+      // Initialize SSE connection with headers
+      SSEHelpers.initializeSSE(res, {
+        connectionId: connectionId,
+        cors: {
+          origin: this.getAllowedOrigin(req),
+          credentials: true
+        }
+      });
 
-    // Create connection object
-    const connection = {
-      id: connectionId,
-      response: res,
-      userId: userId,
-      channels: new Set(channels),
-      lastActivity: Date.now(),
-      isAlive: true,
-      userAgent: req.get('User-Agent'),
-      ipAddress: req.ip
-    };
+      // Create connection object with better error tracking
+      const connection = {
+        id: connectionId,
+        response: res,
+        userId: userId,
+        channels: new Set(channels),
+        lastActivity: Date.now(),
+        createdAt: Date.now(),
+        isAlive: true,
+        userAgent: req.get('User-Agent'),
+        ipAddress: req.ip,
+        errorCount: 0,
+        lastError: null
+      };
 
-    this.connections.set(connectionId, connection);
+      this.connections.set(connectionId, connection);
 
-    // Subscribe to channels
-    channels.forEach(channel => {
-      this.subscribeToChannel(connectionId, channel);
-    });
+      // Subscribe to channels with error handling
+      channels.forEach(channel => {
+        try {
+          this.subscribeToChannel(connectionId, channel);
+        } catch (error) {
+          console.warn(`Failed to subscribe to channel ${channel}:`, error.message);
+        }
+      });
 
-    // Send welcome message with connection info
-    SSEHelpers.sendEvent(res, 'connected', {
-      connectionId: connectionId,
-      userId: userId,
-      channels: channels,
-      maxConnections: this.config.maxConnections,
-      heartbeatInterval: this.config.heartbeatInterval
-    });
+      // Send welcome message with connection info
+      SSEHelpers.sendEvent(res, 'connected', {
+        connectionId: connectionId,
+        userId: userId,
+        channels: channels,
+        maxConnections: this.config.maxConnections,
+        heartbeatInterval: this.config.heartbeatInterval,
+        timestamp: new Date().toISOString()
+      });
 
-    // Handle connection cleanup
-    SSEHelpers.handleConnectionCleanup(req, () => {
+      // Handle connection cleanup with error handling
+      this.setupConnectionCleanup(req, res, connectionId);
+
+      console.log(`SSE connection added: ${connectionId} (User: ${userId || 'anonymous'}, IP: ${req.ip})`);
+      return connectionId;
+      
+    } catch (error) {
+      console.error(`Failed to create SSE connection: ${error.message}`);
+      this.connections.delete(connectionId);
+      return SSEHelpers.sendError(res, 'Failed to establish SSE connection');
+    }
+  }
+
+  /**
+   * Setup connection cleanup handlers
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {string} connectionId - Connection ID
+   */
+  setupConnectionCleanup(req, res, connectionId) {
+    // Handle client disconnect
+    req.on('close', () => {
       this.removeConnection(connectionId);
     });
 
-    console.log(`SSE connection added: ${connectionId} (User: ${userId || 'anonymous'})`);
-    return connectionId;
+    req.on('aborted', () => {
+      this.removeConnection(connectionId);
+    });
+
+    // Handle response errors
+    res.on('error', (error) => {
+      const connection = this.connections.get(connectionId);
+      if (connection) {
+        connection.errorCount++;
+        connection.lastError = error.message;
+        
+        // Remove connection if too many errors
+        if (connection.errorCount > 3) {
+          console.warn(`Removing SSE connection ${connectionId} due to repeated errors`);
+          this.removeConnection(connectionId);
+        }
+      }
+    });
+
+    // Handle response finish/close
+    res.on('finish', () => {
+      this.removeConnection(connectionId);
+    });
+
+    res.on('close', () => {
+      this.removeConnection(connectionId);
+    });
   }
 
   /**
@@ -199,23 +260,45 @@ class SSEService {
    */
   sendToConnection(connectionId, event, data) {
     const connection = this.connections.get(connectionId);
-    if (connection && connection.isAlive && !connection.response.destroyed) {
-      try {
-        const success = SSEHelpers.sendEvent(connection.response, event, data);
-        if (success) {
-          connection.lastActivity = Date.now();
-          return true;
-        } else {
-          this.removeConnection(connectionId);
-          return false;
-        }
-      } catch (error) {
-        console.error(`SSE send error for connection ${connectionId}:`, error);
+    if (!connection || !connection.isAlive || connection.response.destroyed) {
+      return false;
+    }
+
+    try {
+      // Check if connection is still writable
+      if (!connection.response.writable) {
         this.removeConnection(connectionId);
         return false;
       }
+
+      const success = SSEHelpers.sendEvent(connection.response, event, data);
+      if (success) {
+        connection.lastActivity = Date.now();
+        connection.errorCount = 0; // Reset error count on successful send
+        return true;
+      } else {
+        connection.errorCount++;
+        connection.lastError = 'Failed to send event';
+        
+        // Remove connection if too many send failures
+        if (connection.errorCount > 3) {
+          this.removeConnection(connectionId);
+        }
+        return false;
+      }
+    } catch (error) {
+      connection.errorCount++;
+      connection.lastError = error.message;
+      
+      console.error(`SSE send error for connection ${connectionId}:`, error.message);
+      
+      // Remove connection on critical errors or too many errors
+      if (error.code === 'EPIPE' || error.code === 'ECONNRESET' || connection.errorCount > 3) {
+        this.removeConnection(connectionId);
+      }
+      
+      return false;
     }
-    return false;
   }
 
   /**
@@ -375,10 +458,14 @@ class SSEService {
   cleanup() {
     this.stopHeartbeat();
     
-    // Close all active connections
+    // Close all active connections gracefully
     this.connections.forEach((connection, connectionId) => {
-      if (connection.res && !connection.res.destroyed) {
-        connection.res.end();
+      try {
+        if (connection.response && !connection.response.destroyed) {
+          SSEHelpers.closeConnection(connection.response, 'Service shutting down');
+        }
+      } catch (error) {
+        console.warn(`Error closing SSE connection ${connectionId}:`, error.message);
       }
     });
     

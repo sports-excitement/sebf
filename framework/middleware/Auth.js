@@ -1,92 +1,142 @@
-const jwt = require('jsonwebtoken');
 const Response = require('../helpers/Response');
+const AuthService = require('../services/AuthService');
 const JWTSessionService = require('../services/JWTSessionService');
 
 /**
  * Framework Authentication Middleware
  * 
- * Handles core authentication functionality:
- * - JWT token verification
- * - Health check API key validation
- * - Token extraction utilities
- * - Basic authentication flows
+ * Provides systematic auth functionality using the AuthService foundation.
+ * This middleware handles framework-level authentication patterns while
+ * allowing applications to extend with custom logic.
  */
 class FrameworkAuthMiddleware {
   constructor() {
-    this.config = require('../config/services').auth;
+    this.config = require('../config/services');
+    this.authService = new AuthService({
+      jwt: this.config.jwt,
+      session: this.config.session,
+      checkUserStatus: false, // Framework doesn't check user status by default
+      enforceIPValidation: process.env.AUTH_ENFORCE_IP_VALIDATION === 'true',
+      enforceUserAgentValidation: process.env.AUTH_ENFORCE_UA_VALIDATION === 'true'
+    });
+    
+    // Register additional auth providers for framework use
+    this.setupFrameworkAuthProviders();
+  }
+
+  /**
+   * Setup framework-specific auth providers
+   */
+  setupFrameworkAuthProviders() {
+    // Register session-based auth provider
+    this.authService.registerAuthProvider('session', this.validateSessionToken.bind(this));
+    
+    // Register health check API key provider
+    this.authService.registerAuthProvider('health_api_key', this.validateHealthApiKey.bind(this));
+  }
+
+  /**
+   * Validate session-based token (integrates with JWTSessionService)
+   */
+  async validateSessionToken(token, context = {}) {
+    try {
+      const verification = await JWTSessionService.verifyToken(token, {
+        userAgent: context.userAgent,
+        ipAddress: context.ip
+      });
+
+      if (!verification.valid) {
+        return {
+          valid: false,
+          error: verification.error || 'Session validation failed',
+          code: 'SESSION_INVALID'
+        };
+      }
+
+      return {
+        valid: true,
+        payload: verification.payload,
+        session: verification.session,
+        token: token
+      };
+    } catch (error) {
+      return {
+        valid: false,
+        error: error.message,
+        code: 'SESSION_ERROR'
+      };
+    }
+  }
+
+  /**
+   * Validate health check API key
+   */
+  async validateHealthApiKey(key, context = {}) {
+    const expectedKey = process.env.HEALTH_CHECK_API_KEY;
+    
+    if (!expectedKey) {
+      return {
+        valid: false,
+        error: 'Health check API key not configured',
+        code: 'API_KEY_NOT_CONFIGURED'
+      };
+    }
+
+    if (key !== expectedKey) {
+      return {
+        valid: false,
+        error: 'Invalid health check API key',
+        code: 'INVALID_API_KEY'
+      };
+    }
+
+    return {
+      valid: true,
+      payload: { type: 'health_check', authenticated: true },
+      session: null
+    };
   }
 
   /**
    * Main authentication middleware - requires authentication
    */
   async authenticate(req, res, next) {
-    try {
-      const token = this.extractToken(req);
-      
-      if (!token) {
-        return res.status(401).json(
-          Response.error('Authentication token required', 401)
-        );
-      }
-
-      // Verify JWT token with session validation
-      const verification = await JWTSessionService.verifyToken(token, {
-        userAgent: req.get('User-Agent'),
-        ipAddress: req.ip
-      });
-
-      if (!verification.valid) {
-        return res.status(401).json(
-          Response.error(verification.error || 'Authentication failed', 401)
-        );
-      }
-
-      req.user = verification.payload;
-      req.session = verification.session;
-      req.authenticated = true;
-      req.jwtToken = token;
-
-      next();
-    } catch (error) {
-      return this.handleAuthError(error, res);
-    }
+    const middleware = this.authService.createAuthMiddleware({
+      required: true,
+      providers: ['session', 'jwt'],
+      customCheck: this.performFrameworkSecurityChecks.bind(this)
+    });
+    
+    return middleware(req, res, next);
   }
 
   /**
    * Optional authentication middleware - sets user info if available
    */
   async optional(req, res, next) {
+    const middleware = this.authService.createAuthMiddleware({
+      required: false,
+      providers: ['session', 'jwt'],
+      customCheck: this.performFrameworkSecurityChecks.bind(this)
+    });
+    
+    return middleware(req, res, next);
+  }
+
+  /**
+   * Perform framework-specific security checks
+   */
+  async performFrameworkSecurityChecks(payload, req) {
     try {
-      const token = this.extractToken(req);
+      // Add any framework-specific security validations here
+      // For example, check if user has framework access
       
-      if (!token) {
-        req.user = null;
-        req.authenticated = false;
-        return next();
-      }
-
-      // Verify JWT token with session validation
-      const verification = await JWTSessionService.verifyToken(token, {
-        userAgent: req.get('User-Agent'),
-        ipAddress: req.ip
-      });
-
-      if (verification.valid) {
-        req.user = verification.payload;
-        req.session = verification.session;
-        req.authenticated = true;
-        req.jwtToken = token;
-      } else {
-        req.user = null;
-        req.authenticated = false;
-      }
-
-      next();
+      return { valid: true };
     } catch (error) {
-      // In optional auth, we don't fail on errors
-      req.user = null;
-      req.authenticated = false;
-      next();
+      return {
+        valid: false,
+        error: 'Framework security check failed'
+      };
     }
   }
 
@@ -96,34 +146,48 @@ class FrameworkAuthMiddleware {
    */
   async healthCheck(req, res, next) {
     try {
-      // First check for health check API key
-      const apiKey = this.extractHealthCheckApiKey(req);
-      if (apiKey && this.validateHealthCheckApiKey(apiKey)) {
-        req.user = { type: 'health_check', authenticated: true };
-        req.authenticated = true;
+      // Try API key authentication first
+      const apiKeyMiddleware = this.authService.createApiKeyMiddleware({
+        required: false,
+        validKeys: process.env.HEALTH_CHECK_API_KEY ? [process.env.HEALTH_CHECK_API_KEY] : [],
+        keyType: 'health_api_key'
+      });
+      
+      // Check if API key auth succeeds
+      let apiKeyAuth = false;
+      await new Promise((resolve) => {
+        apiKeyMiddleware(req, res, (error) => {
+          if (!error && req.apiKeyValid) {
+            apiKeyAuth = true;
+            req.user = { type: 'health_check', authenticated: true };
+            req.authenticated = true;
+          }
+          resolve();
+        });
+      });
+      
+      if (apiKeyAuth) {
         return next();
       }
 
-      // Check for regular JWT token
-      const token = this.extractToken(req);
-      if (token) {
-        try {
-          const verification = await JWTSessionService.verifyToken(token);
-          if (verification.valid) {
-            req.user = verification.payload;
-            req.session = verification.session;
-            req.authenticated = true;
-            req.jwtToken = token;
-            return next();
-          }
-        } catch (error) {
-          // JWT failed, but continue for public health checks
-        }
+      // Try JWT authentication
+      const jwtMiddleware = this.authService.createAuthMiddleware({
+        required: false,
+        providers: ['session', 'jwt']
+      });
+      
+      await new Promise((resolve) => {
+        jwtMiddleware(req, res, (error) => {
+          resolve();
+        });
+      });
+
+      // Allow public access if no authentication succeeded
+      if (!req.authenticated) {
+        req.user = null;
+        req.authenticated = false;
       }
 
-      // Allow public access to basic health checks
-      req.user = null;
-      req.authenticated = false;
       next();
     } catch (error) {
       // Allow public access even if there's an error
@@ -134,47 +198,23 @@ class FrameworkAuthMiddleware {
   }
 
   /**
-   * Extract JWT token from request
+   * Extract JWT token from request (delegates to AuthService)
    */
   extractToken(req) {
-    // Check Authorization header (Bearer token)
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      return authHeader.substring(7);
-    }
-
-    // Check query parameter (for SSE connections)
-    if (req.query.token) {
-      return req.query.token;
-    }
-
-    // Check cookie (if using cookie-based auth)
-    if (req.cookies && req.cookies.token) {
-      return req.cookies.token;
-    }
-
-    return null;
+    const tokenInfo = this.authService.extractToken(req);
+    return tokenInfo ? tokenInfo.token : null;
   }
 
   /**
-   * Extract health check API key from request
+   * Extract health check API key from request (delegates to AuthService)
    */
   extractHealthCheckApiKey(req) {
-    // Check X-Health-API-Key header
-    if (req.headers['x-health-api-key']) {
-      return req.headers['x-health-api-key'];
-    }
-
-    // Check query parameter
-    if (req.query.apiKey) {
-      return req.query.apiKey;
-    }
-
-    return null;
+    const keyInfo = this.authService.extractApiKey(req);
+    return keyInfo && keyInfo.type === 'health_api_key' ? keyInfo.key : null;
   }
 
   /**
-   * Validate health check API key
+   * Validate health check API key (delegates to AuthService)
    */
   validateHealthCheckApiKey(apiKey) {
     const expectedKey = process.env.HEALTH_CHECK_API_KEY;
@@ -221,6 +261,34 @@ class FrameworkAuthMiddleware {
    */
   isAuthenticated(req) {
     return req.authenticated === true;
+  }
+
+  /**
+   * Get the underlying AuthService instance (for extension by applications)
+   */
+  getAuthService() {
+    return this.authService;
+  }
+
+  /**
+   * Register custom auth provider (delegation to AuthService)
+   */
+  registerAuthProvider(name, validator) {
+    return this.authService.registerAuthProvider(name, validator);
+  }
+
+  /**
+   * Register custom validator (delegation to AuthService)
+   */
+  registerCustomValidator(name, validator) {
+    return this.authService.registerCustomValidator(name, validator);
+  }
+
+  /**
+   * Blacklist a token (delegation to AuthService)
+   */
+  blacklistToken(token) {
+    return this.authService.blacklistToken(token);
   }
 }
 
