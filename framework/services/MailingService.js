@@ -150,32 +150,56 @@ class MailingService {
    * Load email templates from file system
    */
   async loadTemplates() {
-    const templatesDir = path.join(__dirname, '../templates/email');
+    // Template directories in order of priority (app resources first, then framework)
+    const templateDirectories = [
+      path.join(process.cwd(), 'app/resources/templates/email'), // User-customizable templates
+      path.join(__dirname, '../templates/email')                 // Default framework templates
+    ];
     
-    try {
-      // Create templates directory if it doesn't exist
-      await fs.mkdir(templatesDir, { recursive: true });
-      
-      const files = await fs.readdir(templatesDir);
-      const templateFiles = files.filter(file => file.endsWith('.html') || file.endsWith('.txt'));
-      
-      for (const file of templateFiles) {
-        const templateName = path.basename(file, path.extname(file));
-        const templatePath = path.join(templatesDir, file);
-        const templateContent = await fs.readFile(templatePath, 'utf8');
+    const loadedTemplates = new Set(); // Track which templates we've already loaded
+    
+    for (const templatesDir of templateDirectories) {
+      try {
+        // Create templates directory if it doesn't exist
+        await fs.mkdir(templatesDir, { recursive: true });
         
-        this.templates.set(templateName, {
-          content: templateContent,
-          type: path.extname(file).substring(1),
-          path: templatePath,
-          lastModified: (await fs.stat(templatePath)).mtime
-        });
+        const files = await fs.readdir(templatesDir);
+        const templateFiles = files.filter(file => file.endsWith('.html') || file.endsWith('.txt'));
+        
+        for (const file of templateFiles) {
+          const templateName = path.basename(file, path.extname(file));
+          
+          // Skip if we've already loaded this template (app resources take priority)
+          if (loadedTemplates.has(templateName)) {
+            continue;
+          }
+          
+          const templatePath = path.join(templatesDir, file);
+          const templateContent = await fs.readFile(templatePath, 'utf8');
+          
+          this.templates.set(templateName, {
+            content: templateContent,
+            type: path.extname(file).substring(1),
+            path: templatePath,
+            lastModified: (await fs.stat(templatePath)).mtime,
+            source: templatesDir.includes('app/resources') ? 'app' : 'framework'
+          });
+          
+          loadedTemplates.add(templateName);
+        }
+        
+      } catch (error) {
+        // Only warn if it's the framework directory (app resources directory is optional)
+        if (templatesDir.includes('framework')) {
+          Logger.warn(`Failed to load templates from ${templatesDir}:`, error.message);
+        }
       }
-      
-      Logger.info(`📧 Loaded ${this.templates.size} email templates`);
-    } catch (error) {
-      Logger.warn('Failed to load email templates:', error.message);
     }
+    
+    const appTemplates = Array.from(this.templates.values()).filter(t => t.source === 'app').length;
+    const frameworkTemplates = Array.from(this.templates.values()).filter(t => t.source === 'framework').length;
+    
+    Logger.info(`📧 Loaded ${this.templates.size} email templates (${appTemplates} custom, ${frameworkTemplates} framework)`);
   }
 
   /**

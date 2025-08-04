@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{subject}} - {{app_name}}</title>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            line-height: 1.6; 
+            color: #333; 
+            max-width: 600px; 
+            margin: 0 auto; 
+            padding: 20px; 
+            background-color: #f4f4f4;
+        }
+        .container {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+        .header { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            color: white; 
+            padding: 40px 30px; 
+            text-align: center; 
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 300;
+        }
+        .content { 
+            padding: 40px 30px; 
+        }
+        .content h2 {
+            color: #333;
+            margin-top: 0;
+        }
+        .button { 
+            display: inline-block; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            color: white; 
+            padding: 15px 30px; 
+            text-decoration: none; 
+            border-radius: 25px; 
+            margin: 20px 0; 
+            transition: transform 0.2s;
+        }
+        .button:hover {
+            transform: translateY(-2px);
+        }
+        .footer { 
+            background: #f8f9fa;
+            text-align: center; 
+            padding: 30px; 
+            color: #666; 
+            font-size: 14px; 
+            border-top: 1px solid #e9ecef;
+        }
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{{subject}}</h1>
+        </div>
+        <div class="content">
+            <h2>Hello {{user_name}},</h2>
+            
+            <p>{{message}}</p>
+            
+            {{#show_button}}
+            <div style="text-align: center;">
+                <a href="{{button_url}}" class="button">{{button_text}}</a>
+            </div>
+            {{/show_button}}
+            
+            <p>Thank you for using {{app_name}}!</p>
+            
+            <p>Best regards,<br>The {{app_name}} Team</p>
+        </div>
+        <div class="footer">
+            <p>&copy; {{current_year}} {{app_name}}. All rights reserved.</p>
+            <p>This email was sent to {{user_email}}</p>
+            {{#unsubscribe_url}}
+            <p><a href="{{unsubscribe_url}}">Unsubscribe</a> | <a href="{{app_url}}">Visit our website</a></p>
+            {{/unsubscribe_url}}
+        </div>
+    </div>
+</body>
+</html>
