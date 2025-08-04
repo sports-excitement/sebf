@@ -1,0 +1,23 @@
+{{subject}}
+
+Hello {{user_name}},
+
+{{message}}
+
+{{#show_button}}
+{{button_text}}: {{button_url}}
+{{/show_button}}
+
+Thank you for using {{app_name}}!
+
+Best regards,
+The {{app_name}} Team
+
+---
+© {{current_year}} {{app_name}}. All rights reserved.
+This email was sent to {{user_email}}
+
+{{#unsubscribe_url}}
+Unsubscribe: {{unsubscribe_url}}
+Visit our website: {{app_url}}
+{{/unsubscribe_url}}

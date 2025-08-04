@@ -159,20 +159,36 @@ class CORSService {
    */
   addDynamicOrigin(pattern) {
     try {
-      // Convert simple patterns to regex
-      let regexPattern = pattern;
+      // Validate input pattern to prevent obvious injection attempts
+      if (this._isPatternMalicious(pattern)) {
+        throw new Error('Potentially malicious pattern detected');
+      }
+
+      let regexPattern;
       
       // Handle wildcard subdomains: *.example.com
       if (pattern.startsWith('*.')) {
-        regexPattern = pattern.replace('*.', '^https?://[^./]+\\.');
-        regexPattern = regexPattern.replace(/\./g, '\\.');
-        regexPattern += '$';
+        // Extract the domain part after '*.'
+        const domainPart = pattern.substring(2);
+        // Properly escape all regex special characters in the domain part
+        const escapedDomain = domainPart.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+        // Construct the regex pattern with proper escaping
+        regexPattern = '^https?://[^./]+\\.' + escapedDomain + '$';
       }
       // Handle port wildcards: http://localhost:*
-      else if (pattern.includes(':*')) {
-        regexPattern = pattern.replace(':*', ':\\d+');
-        regexPattern = regexPattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-        regexPattern = '^' + regexPattern + '$';
+      else if (pattern.includes(':*') && this._isValidPortPattern(pattern)) {
+        // First escape all regex special characters in the base pattern (without the port wildcard)
+        const basePattern = pattern.replace(':*', '');
+        const escapedBase = basePattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+        // Then add the port regex pattern
+        regexPattern = '^' + escapedBase + ':\\d+$';
+      }
+      // Handle any other patterns by fully escaping them (treating as literal strings)
+      else {
+        // Completely escape the pattern to treat it as a literal string
+        const escapedPattern = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+        regexPattern = '^' + escapedPattern + '$';
+        Logger.warn(`🌐 Pattern "${pattern}" treated as literal string (no wildcards processed)`);
       }
       
       const regex = new RegExp(regexPattern, 'i');
@@ -182,6 +198,36 @@ class CORSService {
     } catch (error) {
       Logger.error(`Failed to add dynamic origin pattern ${pattern}:`, error.message);
     }
+  }
+
+  /**
+   * Check if a pattern contains potentially malicious regex injection attempts
+   */
+  _isPatternMalicious(pattern) {
+    // Check for obvious regex injection patterns
+    const maliciousPatterns = [
+      /\(\?\:/,           // Non-capturing groups
+      /\(\?\=/,           // Positive lookahead
+      /\(\?\!/,           // Negative lookahead
+      /\(\?\<=/,          // Positive lookbehind
+      /\(\?\<!/,          // Negative lookbehind
+      /\\[nrtfvbas0]/,    // Specific escape sequences like \n, \t, \f, \v, \b, \a, \s, \0
+      /\[\^[^\]]*\]/,     // Negated character classes (unless simple)
+      /\{.*,.*\}/,        // Quantifiers with complex ranges
+      /\|.*\|/,           // Multiple alternation pipes
+      /\(\?\#/,           // Comments in regex
+    ];
+
+    return maliciousPatterns.some(malicious => malicious.test(pattern));
+  }
+
+  /**
+   * Validate that a port pattern is in expected format
+   */
+  _isValidPortPattern(pattern) {
+    // Should match patterns like: http://localhost:* or https://example.com:*
+    const validPortPattern = /^https?:\/\/[a-zA-Z0-9.-]+:\*$/;
+    return validPortPattern.test(pattern);
   }
 
   /**
