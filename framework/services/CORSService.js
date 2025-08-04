@@ -211,7 +211,7 @@ class CORSService {
       /\(\?\!/,           // Negative lookahead
       /\(\?\<=/,          // Positive lookbehind
       /\(\?\<!/,          // negative lookbehind
-      /\\\w+/,            // Escape sequences like \n, \t, etc.
+      /\\[nrtfvbas0]/,    // Specific escape sequences like \n, \t, \f, \v, \b, \a, \s, \0
       /\[\^[^\]]*\]/,     // Negated character classes (unless simple)
       /\{.*,.*\}/,        // Quantifiers with complex ranges
       /\|.*\|/,           // Multiple alternation pipes
