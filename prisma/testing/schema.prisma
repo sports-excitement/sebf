@@ -1,0 +1,116 @@
+// Test Prisma schema file for SQLite testing
+// This file is used specifically for running tests with SQLite
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated/client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./test.db"
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  role      UserRole @default(USER)
+  isActive  Boolean  @default(true)
+  
+  // Profile information
+  bio       String?
+  avatarUrl String?
+  phone     String?
+  location  String?
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastLoginAt DateTime?
+  
+  // Relationships
+  sessions      Session[]
+  notifications Notification[]
+  logs          SystemLog[]
+  
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    Int
+  data      String   // SQLite doesn't support Json, so we'll use String
+  expiresAt DateTime
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // User relationship
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("sessions")
+}
+
+model Notification {
+  id      Int                @id @default(autoincrement())
+  userId  Int
+  type    NotificationType
+  title   String
+  message String
+  data    String?            // SQLite doesn't support Json, so we'll use String
+  isRead  Boolean            @default(false)
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  readAt    DateTime?
+  
+  // User relationship
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("notifications")
+}
+
+model SystemLog {
+  id        Int      @id @default(autoincrement())
+  level     LogLevel
+  message   String
+  meta      String?  // SQLite doesn't support Json, so we'll use String
+  source    String?
+  userId    Int?
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  
+  // User relationship (optional)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  @@map("system_logs")
+}
+
+// Enums
+enum UserRole {
+  USER
+  ADMIN
+  MODERATOR
+  SUPERADMIN
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+  SYSTEM
+  USER_ACTION
+}
+
+enum LogLevel {
+  ERROR
+  WARN
+  INFO
+  DEBUG
+}

@@ -1,0 +1,130 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  role      UserRole @default(USER)
+  isActive  Boolean  @default(true)
+  
+  // Profile information
+  bio       String?
+  avatarUrl String?
+  phone     String?
+  location  String?
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastLoginAt DateTime?
+  
+  // Relationships
+  sessions      Session[]
+  notifications Notification[]
+  logs          SystemLog[]
+  
+  @@map("users")
+  @@index([email])
+  @@index([role])
+  @@index([isActive])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    Int
+  data      Json
+  expiresAt DateTime
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // User relationship
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("sessions")
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Notification {
+  id      Int                @id @default(autoincrement())
+  userId  Int
+  type    NotificationType
+  title   String
+  message String
+  data    Json?
+  isRead  Boolean            @default(false)
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  readAt    DateTime?
+  
+  // User relationship
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("notifications")
+  @@index([userId])
+  @@index([isRead])
+  @@index([type])
+}
+
+model SystemLog {
+  id        Int      @id @default(autoincrement())
+  level     LogLevel
+  message   String
+  meta      Json?
+  source    String?
+  userId    Int?
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  
+  // User relationship (optional)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  @@map("system_logs")
+  @@index([level])
+  @@index([source])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// Enums
+enum UserRole {
+  USER
+  ADMIN
+  MODERATOR
+  SUPERADMIN
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+  SYSTEM
+  USER_ACTION
+}
+
+enum LogLevel {
+  ERROR
+  WARN
+  INFO
+  DEBUG
+}
