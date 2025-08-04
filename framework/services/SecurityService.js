@@ -169,10 +169,31 @@ class SecurityService {
     this.registerThreatRule('xss', {
       enabled: true,
       patterns: [
-        /<script[^>]*>.*?<\/script>/gi,
-        /javascript:/gi,
+        // Improved script tag detection - handles spaces and attributes in closing tag
+        /<script[^>]*>.*?<\/script\s*>/gis,
+        // Alternative script patterns
+        /<script[^>]*\/>/gi,
+        // Javascript protocols
+        /javascript\s*:/gi,
+        /vbscript\s*:/gi,
+        /data\s*:\s*text\/html/gi,
+        // Event handlers
         /on\w+\s*=/gi,
-        /<iframe[^>]*>/gi
+        // Iframe and other dangerous tags
+        /<iframe[^>]*>/gi,
+        /<object[^>]*>/gi,
+        /<embed[^>]*>/gi,
+        /<link[^>]*>/gi,
+        /<meta[^>]*>/gi,
+        // Expression and eval patterns
+        /expression\s*\(/gi,
+        /eval\s*\(/gi,
+        // HTML entities that could be XSS
+        /&#x?[0-9a-f]+;?/gi,
+        // Style injection
+        /<style[^>]*>.*?<\/style\s*>/gis,
+        // Import statements
+        /@import/gi
       ],
       severity: 'medium',
       action: 'sanitize'
