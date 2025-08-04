@@ -809,7 +809,17 @@ class ControlCLI {
    */
   decodeJwt(token) {
     try {
-      const decoded = jwt.decode(token, { complete: true });
+      // Load configuration for JWT verification
+      require('dotenv').config();
+      const config = require('./framework/config/services');
+      
+      // Verify token signature for security
+      const decoded = jwt.verify(token, config.jwt.secret, {
+        algorithms: [config.jwt.algorithm],
+        issuer: config.jwt.issuer,
+        audience: config.jwt.audience,
+        complete: true
+      });
       
       if (!decoded) {
         this.error('Invalid JWT token');
